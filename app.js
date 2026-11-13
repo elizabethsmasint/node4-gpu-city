@@ -2,17 +2,18 @@ import {colors,categories,esc,num,ms,duration,bytes,clamp,prepare,eventRange,gro
 import {City,Operation,fitCanvas} from './city.js';
 import {operationNames,operationActions} from './overview.js';
 import {executionFlow,flowSummary,flowStates,launchName,kernelDependencies} from './flow.js';
-import {transferProgress} from './transfers.js';
+import {DataFlowBoard,initialDataFlowEvent} from './dataflow.js';
 const $=id=>document.getElementById(id);
-const state={data:null,catalog:null,view:'replay',cityDetail:'overview',layout:'flow',flowStream:null,playing:false,speed:.1,time:0,start:0,end:1,selected:0,query:'',category:'all',follow:false,sort:'time',filtered:new Set(),matching:[],timelineDirty:true,visualClock:0,compareTime:0,comparePlaying:false,compareData:[],relative:false};
+const state={data:null,catalog:null,view:'replay',cityDetail:'overview',layout:'flow',flowStream:null,playing:false,followCursor:true,speed:.000001,time:0,start:0,end:1,selected:0,query:'',category:'all',follow:false,sort:'time',filtered:new Set(),matching:[],timelineDirty:true,visualClock:0,compareTime:0,comparePlaying:false,compareData:[],relative:false};
 const cache=new Map();let loadSequence=0,lastFrame=performance.now(),lastText=0,sources=null;
+const board=new DataFlowBoard($('dependency-chain'));
 const city=new City($('city')),operation=new Operation($('operation'));let miniCities=[];
 const timelineStatic=document.createElement('canvas');let timelineW=0,timelineH=0,timelineDrag=null;
 const laneCategories=categories;const laneY=cat=>26+laneCategories.indexOf(cat)*10;
 const error=e=>{$('status').className='status error';$('status').textContent=String(e.message??e);console.error(e);};
 async function fetchJSON(url){const r=await fetch(url);if(!r.ok)throw Error(`${url}: HTTP ${r.status}`);return r.json();}
 async function load(id){if(cache.has(id))return cache.get(id);const entry=state.catalog.datasets.find(d=>d.id===id);if(!entry)throw Error('Dataset unavailable');const data=prepare(await fetchJSON(entry.url));cache.set(id,data);return data;}
-async function switchDataset(id){const serial=++loadSequence;state.playing=false;updatePlay();$('status').className='status';$('status').textContent='Loading measured events…';const data=await load(id);if(serial!==loadSequence)return;state.data=data;state.flowStream=data.streamLanes[0]?.key??null;$('flow-stream').innerHTML=data.streamLanes.map(l=>`<option value="${esc(l.key)}">Device ${esc(l.device??'?')} / stream ${esc(l.stream??'?')}</option>`).join('');$('flow-stream').value=state.flowStream??'';state.time=0;state.start=0;state.end=data.duration_ns;state.selected=0;state.follow=false;$('follow').checked=false;state.category='all';state.query='';$('category').value='all';$('search').value='';state.timelineDirty=true;renderStats();renderGroups();renderIssues();selectEvent(0,{seek:true});$('step-end').textContent=ms(data.duration_ns);$('workload').textContent=data.cohort?'16,384 tokens / forward + backward + optimizer':'Imported trace · workload metadata unavailable';$('city-heading').textContent=`${data.hardware?.[0]?.name??'GPU'} industrial district`;setCityDetail(state.cityDetail);$('status').textContent='';$('dataset').value=id;renderTimelineBase();}
+async function switchDataset(id){const serial=++loadSequence;state.playing=false;updatePlay();$('status').className='status';$('status').textContent='Loading measured events…';const data=await load(id);if(serial!==loadSequence)return;state.data=data;state.flowStream=data.streamLanes[0]?.key??null;$('flow-stream').innerHTML=data.streamLanes.map(l=>`<option value="${esc(l.key)}">Device ${esc(l.device??'?')} / stream ${esc(l.stream??'?')}</option>`).join('');$('flow-stream').value=state.flowStream??'';$('board-stream').innerHTML=$('flow-stream').innerHTML;$('board-stream').value=state.flowStream??'';state.followCursor=true;$('follow-cursor').checked=true;state.time=0;state.start=0;state.end=data.duration_ns;state.selected=0;state.follow=false;$('follow').checked=false;state.category='all';state.query='';$('category').value='all';$('search').value='';state.timelineDirty=true;renderStats();renderGroups();renderIssues();selectEvent(initialDataFlowEvent(data),{seek:true,automatic:true});$('step-end').textContent=ms(data.duration_ns);$('workload').textContent=data.cohort?'16,384 tokens / forward + backward + optimizer':'Imported trace · workload metadata unavailable';$('city-heading').textContent=`${data.hardware?.[0]?.name??'GPU'} industrial district`;setCityDetail(state.cityDetail);$('status').textContent='';$('dataset').value=id;renderTimelineBase();}
 function renderStats(){const d=state.data,s=d.stats;const stats=[['Step wall time',d.benchmark?num(d.benchmark.step_ms,1):'—','ms',d.benchmark?'Unprofiled · 3 runs / 9 steps':'Unavailable for this capture'],['GPU kernel time',num(s.kernel_sum_ns/1e6,1),'ms','Sum of individual kernel durations'],['Production orders',num(s.kernel_count),'launches','Actual CUDA kernel execution records'],['Add + fill',num((s.categories.add?.count??0)+(s.categories.fill?.count??0)),'launches','All configurations · not only large groups'],['No captured activity',num(s.no_activity_ns/1e6,1),'ms','Capture gaps · cause unestablished']];$('stats').innerHTML=stats.map(([title,value,unit,note])=>`<div class="stat"><div class="stat-label">${title}</div><strong>${value}<small>${unit}</small></strong><div class="stat-note">${note}</div></div>`).join('');}
 function renderGroups(){if(!state.data)return;let groups=state.data.groups.filter(g=>groupMatches(g,state.category,state.query));if(state.query.startsWith('aten::')){const opGroups=new Set(state.data.events.filter(e=>e[7]!=null&&state.data.operators[e[7]]?.name.toLowerCase().includes(state.query)).map(e=>e[2]));groups=state.data.groups.filter(g=>opGroups.has(g.id)&&(state.category==='all'||g.category===state.category));}
  groups.sort((a,b)=>state.sort==='count'?b.count-a.count:b.total_ns-a.total_ns);state.filtered=new Set(groups.map(g=>g.id));state.matching=[];const selectedGroup=state.data.events[state.selected]?.[2];state.data.events.forEach((e,i)=>{if(state.filtered.has(e[2])&&(!state.follow||e[2]===selectedGroup))state.matching.push(i);});
@@ -23,9 +24,9 @@ function renderGroups(){if(!state.data)return;let groups=state.data.groups.filte
 }
 function renderIssues(){$('issues').innerHTML=state.data.issues.map((issue,i)=>`<button class="issue" data-issue="${i}"><span class="label-note ${issue.kind==='hypothesis'?'hypothesis':''}">${issue.kind.toUpperCase()}</span><h4>${esc(issue.title)}</h4><strong class="issue-cost">${ms(issue.cost_ns)}</strong><p>${esc(issue.detail)}</p><p><b>Investigate:</b> ${esc(issue.hypothesis)}</p></button>`).join('');}
 function setFilters(category='all',query=''){state.category=category;state.query=query;$('category').value=category;$('search').value=query;renderGroups();}
-function selectEvent(index,{seek=true,zoom=false}={}){const d=state.data;if(!d||index==null||!d.events[index])return;state.selected=index;const e=d.events[index],g=d.groups[e[2]],op=e[7]!=null?d.operators[e[7]]:null;if(seek){state.flowStream=`${e[8]??'?'}:${e[3]??'?'}`;$('flow-stream').value=state.flowStream;state.playing=false;state.time=e[0]+Math.max(.001,e[1]/2);updatePlay();}if(zoom){const width=Math.max(e[1]*6,10000);state.start=clamp(e[0]-width*.25,0,Math.max(0,d.duration_ns-width));state.end=Math.min(d.duration_ns,state.start+width);}
- operation.set(g,op);renderTransfers();renderDependencies();$('event-index').textContent=`#${num(index+1)} / ${num(d.events.length)}`;
- $('inspect-summary').innerHTML=`<h2 class="kernel-heading"><i class="swatch" style="--swatch:${colors[g.category]}"></i>${esc(g.label)}</h2><div class="kernel-badges"><span>${esc(g.category.toUpperCase())}</span><span>${esc((g.dtype??'dtype unavailable').split(' (')[0])}</span><span>${duration(e[1])}</span><span>PINNED ORDER</span></div><p class="kernel-description">${esc(g.semantics.explanation)}</p>`;
+function selectEvent(index,{seek=true,zoom=false,automatic=false}={}){const d=state.data;if(!d||index==null||!d.events[index])return;state.selected=index;if(!automatic){state.followCursor=false;$('follow-cursor').checked=false;}const e=d.events[index],g=d.groups[e[2]],op=e[7]!=null?d.operators[e[7]]:null;if(seek){state.flowStream=`${e[8]??'?'}:${e[3]??'?'}`;$('flow-stream').value=state.flowStream;$('board-stream').value=state.flowStream;state.playing=false;state.time=e[0]+Math.max(.001,e[1]/2);updatePlay();}if(zoom){const width=Math.max(e[1]*6,10000);state.start=clamp(e[0]-width*.25,0,Math.max(0,d.duration_ns-width));state.end=Math.min(d.duration_ns,state.start+width);}
+ operation.set(g,op);renderTransfers();$('event-index').textContent=`#${num(index+1)} / ${num(d.events.length)}`;
+ $('inspect-summary').innerHTML=`<h2 class="kernel-heading"><i class="swatch" style="--swatch:${colors[g.category]}"></i>${esc(g.label)}</h2><div class="kernel-badges"><span>${esc(g.category.toUpperCase())}</span><span>${esc((g.dtype??'dtype unavailable').split(' (')[0])}</span><span>${duration(e[1])}</span><span>SELECTED KERNEL</span></div><p class="kernel-description">${esc(g.semantics.explanation)}</p>`;
  const grid=g.grid?.join(' × ')??'Unavailable',block=g.block?.join(' × ')??'Unavailable';
  const metrics=[['This launch',duration(e[1])],['Mean / signature',duration(g.avg_ns)],['Launches / signature',num(g.count)],['GPU total / signature',ms(g.total_ns)],['% summed kernel time',num(g.pct,3)+'%'],['Start / capture',ms(e[0])],['Grid XYZ',grid],['Block XYZ',block],['Launched threads',num(threads(g))],['Registers / thread',num(g.registers_per_thread)],['Static shared / block',bytes(g.static_shared_bytes)],['Dynamic shared / block',bytes(g.dynamic_shared_bytes)],['Shared / block (combined)',bytes(g.shared_bytes??(g.static_shared_bytes!=null&&g.dynamic_shared_bytes!=null?g.static_shared_bytes+g.dynamic_shared_bytes:null))],['Device / stream',`${e[8]??'?'} / ${e[3]??'?'}`],['Correlation ID',e[4]??'Unavailable'],['Host launch API duration',duration(e[6])],['GPU start − API end',e[5]!=null?duration(e[0]-e[5]-e[6]):'Unavailable']];
  const metricHTML=metrics.map(([title,value])=>`<div class="metric"><span>${title}</span><strong>${esc(value)}</strong></div>`).join('');
@@ -39,34 +40,22 @@ function selectEvent(index,{seek=true,zoom=false}={}){const d=state.data;if(!d||
  renderGroups();state.timelineDirty=true;
 }
 function renderTransfers(){
- const transfer=transferProgress(operation.group,operation.time);
- $('transfer-phase').textContent=transfer.label;
- $('transfer-arrow').textContent=transfer.phase==='load'?'←':transfer.phase==='store'?'→':transfer.phase==='compute'?'⋯':'?';
- for(const name of ['gpu','dram']){
-  const value=transfer[name],percent=value==null?'—':`${Math.floor(value*100)}%`,note=transfer[name+'Note'];
-  $('transfer-'+name+'-fill').style.transform=`scaleY(${value??0})`;
-  $('transfer-'+name+'-percent').textContent=percent;
-  $('transfer-'+name+'-note').textContent=note;
-  $('transfer-'+name).setAttribute('aria-label',`${name.toUpperCase()}: ${note}${value==null?'':`, ${percent}`} · illustrative tile transfer`);
- }
-}
-function renderDependencies(){
- const focus=kernelDependencies(state.data,state.selected,state.time);
+ if(!state.data)return;
+ const focus=board.render(state.data,state.selected,state.time,operation.time,operation.running);
  $('dependency-lane').textContent=focus.lane?`Device ${focus.lane.device??'?'} / stream ${focus.lane.stream??'?'}`:'No recorded launch';
- const html=focus.nodes.map((node,i)=>{
-  const role=['PRECEDING KERNEL','SELECTED KERNEL','FOLLOWING KERNEL'][i];
-  let link='';
-  if(i>0&&node&&focus.nodes[i-1]){
-   const edge=focus.edges.find(e=>e.from===focus.nodes[i-1].event&&e.to===node.event);
-   link=edge?`<div class="dependency-link ${edge.waiting?'waiting':''}"><span aria-hidden="true">↓</span>${edge.waiting?'Must finish first':edge.satisfied?'Prerequisite finished':'Stream order'}</div>`:
-    `<div class="dependency-unproven">${focus.lane.known?'Overlapping intervals · no arrow':'Order unknown · no arrow'}</div>`;
-  }
-  if(!node)return`<div class="dependency-empty">${i===0?'No earlier kernel recorded':'No later kernel recorded'}</div>`;
-  return`${link}<button class="dependency-node ${i===1?'selected':''}" data-event="${node.event}" data-status="${node.status}" aria-pressed="${i===1}" title="${esc(node.group.label??node.group.name)}"><small>${role}</small><strong>${esc(launchName(state.data,node.event))}</strong><span>${flowStates[node.status]}${node.blocker==null?'':` · waits for #${num(node.blocker+1)}`}</span></button>`;
- }).join('');
- if($('dependency-chain').innerHTML!==html)$('dependency-chain').innerHTML=html;
+ $('board-clock').textContent=ms(state.time);
+ $('board-prev').disabled=!focus.nodes[0];$('board-next').disabled=!focus.nodes[2];
 }
-function updatePlay(){$('play').innerHTML=state.playing?'Ⅱ <span>Pause</span>':'▶ <span>Play</span>';$('play').setAttribute('aria-label',state.playing?'Pause':'Play');}
+function followAtCursor(){
+ const flow=executionFlow(state.data,state.time,state.flowStream);
+ const node=flow.nodes[1]??flow.nodes[2]??flow.nodes[0];
+ if(node&&node.event!==state.selected)selectEvent(node.event,{seek:false,automatic:true});
+}
+function stepStream(direction){
+ const focus=kernelDependencies(state.data,state.selected,state.time),node=focus.nodes[direction<0?0:2];
+ if(node){selectEvent(node.event);ensureVisible();}
+}
+function updatePlay(){$('play').innerHTML=state.playing?'Ⅱ <span>Pause</span>':'▶ <span>Play</span>';$('play').setAttribute('aria-label',state.playing?'Pause':'Play');$('board-play').textContent=state.playing?'Ⅱ Pause trace':'▶ Play trace';$('board-play').setAttribute('aria-pressed',String(state.playing));}
 function playToggle(){if(!state.data)return;if(state.time>=state.data.duration_ns)state.time=0;state.playing=!state.playing;updatePlay();}
 function step(dir){const i=nextIndex(state.matching,state.selected,dir);if(i!=null){selectEvent(i);ensureVisible();}}
 function ensureVisible(){if(state.time<state.start||state.time>state.end){const span=state.end-state.start;state.start=clamp(state.time-span*.25,0,state.data.duration_ns-span);state.end=state.start+span;state.timelineDirty=true;}}
@@ -133,7 +122,12 @@ function currentActivity(){const window=state.layout==='flow'||state.speed<=.000
 function bind(){
  $('city-overview').onclick=()=>setCityDetail('overview');$('city-full').onclick=()=>setCityDetail('full');
  $('layout-flow').onclick=()=>setLayout('flow');$('layout-activity').onclick=()=>setLayout('activity');
- $('flow-stream').onchange=()=>state.flowStream=$('flow-stream').value;
+ $('flow-stream').onchange=()=>{state.flowStream=$('flow-stream').value;$('board-stream').value=state.flowStream;state.followCursor=true;$('follow-cursor').checked=true;followAtCursor();};
+ $('board-stream').onchange=()=>{$('flow-stream').value=$('board-stream').value;$('flow-stream').onchange();};
+ $('board-play').onclick=playToggle;
+ $('board-prev').onclick=()=>stepStream(-1);$('board-next').onclick=()=>stepStream(1);
+ $('follow-cursor').onchange=()=>{state.followCursor=$('follow-cursor').checked;if(state.followCursor)followAtCursor();};
+ $('seek-selected').onclick=()=>{selectEvent(state.selected,{seek:true});ensureVisible();};
  $('flow-slow').onclick=()=>{setSpeed(.000001);if(!state.playing)playToggle();};
  $('flow-orders').onclick=e=>{const b=e.target.closest('[data-event]');if(b?.dataset.event!=null)inspectFlow(+b.dataset.event);};
  $('overview-families').innerHTML=categories.map(cat=>`<button id="family-${cat}" data-family="${cat}" hidden></button>`).join('');
@@ -147,7 +141,7 @@ function bind(){
  $('play').onclick=playToggle;$('previous').onclick=()=>step(-1);$('next').onclick=()=>step(1);$('speed').onchange=()=>setSpeed(+$('speed').value);$('follow').onchange=()=>{state.follow=$('follow').checked;renderGroups();};setSpeed(state.speed);
  $('zoom-in').onclick=()=>zoom(.25);$('zoom-out').onclick=()=>zoom(4);$('zoom-event').onclick=()=>selectEvent(state.selected,{zoom:true});$('fit').onclick=()=>fit(true);$('city-reset').onclick=()=>fit();
  $('scrubber').oninput=()=>{state.time=+$('scrubber').value/100000*state.data.duration_ns;state.playing=false;updatePlay();ensureVisible();};
- $('operation-play').onclick=()=>{operation.running=!operation.running;$('operation-play').textContent=operation.running?'Ⅱ':'▶';};
+ $('operation-play').onclick=()=>{operation.running=!operation.running;$('operation-play').textContent=operation.running?'Ⅱ Pause transfers':'▶ Play transfers';$('operation-play').setAttribute('aria-label',operation.running?'Pause transfer preview':'Play transfer preview');$('operation-play').setAttribute('aria-pressed',String(!operation.running));renderTransfers();};
  $('dependency-chain').onclick=e=>{const b=e.target.closest('[data-event]');if(b?.dataset.event!=null)inspectFlow(+b.dataset.event);};
  $('inspect-details').onclick=e=>{if(e.target.id==='inspect-prev')selectEvent(Math.max(0,state.selected-1));if(e.target.id==='inspect-next')selectEvent(Math.min(state.data.events.length-1,state.selected+1));const b=e.target.closest('[data-source]');if(b)openSource(b.dataset.source,+b.dataset.line).catch(error);};
  $('city').onclick=e=>{const r=$('city').getBoundingClientRect(),hit=city.hit(e.clientX-r.left,e.clientY-r.top);if(hit){if(state.layout==='flow')inspectFlow(hit.event);else selectEvent(hit.event);}};
@@ -171,11 +165,12 @@ function bind(){
 function frame(now){const dt=Math.max(0,now-lastFrame);lastFrame=now;
  if(state.data&&state.view==='replay'){
   if(state.playing){state.time=advance(state.time,dt,state.speed,state.data.duration_ns);state.visualClock+=dt/1000;if(state.time>=state.data.duration_ns){state.playing=false;updatePlay();}ensureVisible();}
+  if(state.followCursor&&now-lastText>100)followAtCursor();
   const a=currentActivity(),window=a.window;
   const shown=state.time>=state.data.duration_ns?[]:visibleOrders(a.orders),shownCount=shown.reduce((n,o)=>n+o.count,0);
   const flow=state.layout==='flow'?executionFlow(state.data,state.time,state.flowStream):null;
-  city.draw(shown,state.visualClock,{smCount:state.data.hardware?.[0]?.smCount??48,memory:a.memory,exact:window===0,completed:state.time>=state.data.duration_ns,dispatch:a.dispatch,flow,selected:state.selected,matches:flowMatches});
-  const stage=operation.draw(dt);renderTransfers();if(now-lastText>100){renderDependencies();$('operation-stage').textContent=stage;$('city-clock').textContent=ms(state.time);$('city-activity').textContent=flow?`${num(flow.activeCount??0)} running on this stream · exact cursor`:window?`${num(shownCount)} shown / ${num(a.count)} recorded · last ${duration(Math.min(window,state.time))}`:`${num(a.count)} active / ${num(shownCount)} shown · ${num(a.dispatch)} host launches${a.memory.length?' · '+a.memory.length+' memory activities':''}`;$('order-now').textContent=flow?flowSummary(flow,state.data):shown.length?shown.slice(0,3).map(o=>o.group.label).join(' · '):state.time>=state.data.duration_ns?'Capture complete':a.count?'Recorded kernels hidden by operation filter':'No captured kernel executing at this cursor';$('time-readout').textContent=`${ms(state.time)} / ${ms(state.data.duration_ns)}`;$('scrubber').value=Math.round(state.time/state.data.duration_ns*100000);if(flow)renderFlowSummary(flow);else if(state.cityDetail==='overview')renderOverviewSummary(shown,window,a.count);lastText=now;}
+  if($('city-panel').getBoundingClientRect().width>0)city.draw(shown,state.visualClock,{smCount:state.data.hardware?.[0]?.smCount??48,memory:a.memory,exact:window===0,completed:state.time>=state.data.duration_ns,dispatch:a.dispatch,flow,selected:state.selected,matches:flowMatches});
+  const stage=operation.draw(dt);renderTransfers();if(now-lastText>100){$('operation-stage').textContent=stage;$('city-clock').textContent=ms(state.time);$('city-activity').textContent=flow?`${num(flow.activeCount??0)} running on this stream · exact cursor`:window?`${num(shownCount)} shown / ${num(a.count)} recorded · last ${duration(Math.min(window,state.time))}`:`${num(a.count)} active / ${num(shownCount)} shown · ${num(a.dispatch)} host launches${a.memory.length?' · '+a.memory.length+' memory activities':''}`;$('order-now').textContent=flow?flowSummary(flow,state.data):shown.length?shown.slice(0,3).map(o=>o.group.label).join(' · '):state.time>=state.data.duration_ns?'Capture complete':a.count?'Recorded kernels hidden by operation filter':'No captured kernel executing at this cursor';$('time-readout').textContent=`${ms(state.time)} / ${ms(state.data.duration_ns)}`;$('scrubber').value=Math.round(state.time/state.data.duration_ns*100000);if(flow)renderFlowSummary(flow);else if(state.cityDetail==='overview')renderOverviewSummary(shown,window,a.count);lastText=now;}
   drawTimeline();
  }
  if(state.view==='compare'&&state.compareData.length){const total=state.compareData[0].duration_ns;if(state.comparePlaying){state.compareTime=advance(state.compareTime,dt,.1,total);state.visualClock+=dt/1000;if(state.compareTime===total){state.comparePlaying=false;$('compare-play').textContent='▶ Play comparison';}}state.compareData.forEach((d,i)=>{const t=compareTime(state.compareTime,d.duration_ns,total,state.relative),window=replayWindow(d.duration_ns,true),a=activity(d,t,window);miniCities[i].draw(t>=d.duration_ns?[]:a.orders,state.visualClock,{smCount:d.hardware[0]?.smCount??48,completed:t>=d.duration_ns,memory:a.memory,dispatch:a.dispatch});$('compare-now-'+i).textContent=`${ms(t)} · ${a.count} orders / ${duration(Math.min(window,t))} window`;});$('compare-clock').textContent=ms(state.compareTime);$('compare-scrubber').value=Math.round(state.compareTime/total*100000);}
@@ -183,5 +178,5 @@ function frame(now){const dt=Math.max(0,now-lastFrame);lastFrame=now;
 }
 async function init(){try{state.catalog=await fetchJSON('data/catalog.json');$('dataset').innerHTML=state.catalog.datasets.map(d=>`<option value="${d.id}">${esc(d.label)}</option>`).join('');bind();renderEvidence();await switchDataset('original');renderComparison();requestAnimationFrame(frame);}catch(e){error(e);}}
 // Small read-only QA surface; the same real controls are used by browser tests.
-window.gpuCity={state,city,operation,load,selectEvent,activity,showView,investigate};
+window.gpuCity={state,city,operation,board,load,selectEvent,activity,showView,investigate};
 init();
