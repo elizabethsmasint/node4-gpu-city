@@ -1,7 +1,7 @@
 import {colors,clamp} from './core.js';
 import {drawOverview} from './overview.js';
-import {drawFlow} from './flow.js';
-import {transferProgress} from './transfers.js';
+import {drawFlow} from './flow.js?v=big-picture-3';
+import {transferProgress} from './transfers.js?v=big-picture-3';
 export function fitCanvas(canvas){const r=canvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2);const w=Math.max(1,r.width),h=Math.max(1,r.height);if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return{ctx,w,h};}
 const mix=(a,b,t)=>a+(b-a)*t;
 export class City{
@@ -72,8 +72,8 @@ export class City{
 export class Operation{
  constructor(canvas){this.canvas=canvas;this.time=0;this.running=true;this.group=null;this.operator=null;}
  set(group,operator=null){this.group=group;this.operator=operator;this.time=0;}
- draw(dt){if(this.running)this.time+=dt;const{ctx:c,w,h}=fitCanvas(this.canvas);c.clearRect(0,0,w,h);if(!this.group)return'';
-  const g=this.group,cat=g.category,color=colors[cat],phase=(this.time/5500)%1,stage=Math.floor(phase*3),u=phase*3-stage;
+ draw(dt){if(this.running)this.time=Math.min(5500,this.time+dt);const{ctx:c,w,h}=fitCanvas(this.canvas);c.clearRect(0,0,w,h);if(!this.group)return'';
+  const g=this.group,cat=g.category,color=colors[cat],phase=clamp(this.time/5500,0,1),stage=Math.min(2,Math.floor(phase*3)),u=phase*3-stage;
   const sx=w/280,sy=h/164;c.save();c.scale(sx,sy);
   const text=(s,x,y,size=9,col='#53634a')=>{c.fillStyle=col;c.font=`${size}px ui-monospace,monospace`;c.textAlign='center';c.fillText(s,x,y);};
   const rect=(x,y,ww,hh,fill,stroke)=>{c.fillStyle=fill;c.beginPath();c.roundRect(x,y,ww,hh,3);c.fill();if(stroke){c.strokeStyle=stroke;c.lineWidth=.7;c.stroke();}};

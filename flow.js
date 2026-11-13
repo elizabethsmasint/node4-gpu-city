@@ -20,7 +20,7 @@ export function executionFlow(data,time,key=data.streamLanes[0]?.key){
  return{lane,nodes,edges,time,activeCount};
 }
 
-function flowNode(data,lane,position,time){
+export function flowNode(data,lane,position,time){
   const indices=lane.indices;
   const event=indices[position]??null;
   if(event==null)return null;
