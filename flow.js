@@ -1,4 +1,4 @@
-import {colors,upperBound,duration,num,clamp} from './core.js';
+import {colors,lowerBound,upperBound,duration,num,clamp} from './core.js';
 import {operationNames} from './overview.js';
 
 export const flowStates={done:'Finished',running:'Running',waiting:'Waiting',queued:'Queued',launching:'Launching',future:'Not launched',unknown:'Queue unknown'};
@@ -14,7 +14,14 @@ export function executionFlow(data,time,key=data.streamLanes[0]?.key){
  const activeCount=active.length;let finished=at-1;
  while(finished>=0&&data.events[indices[finished]][0]+data.events[indices[finished]][1]>time)finished--;
  const positions=[activeCount>1?active.at(-2):finished,active.at(-1)??-1,at,at+1];
- const nodes=positions.map(position=>{
+ const nodes=positions.map(position=>flowNode(data,lane,position,time));
+ const present=nodes.filter(Boolean),edges=[];
+ if(lane.known)for(let i=1;i<present.length;i++){if(present[i-1].end<=present[i].start)edges.push({from:present[i-1].event,to:present[i].event,waiting:present[i].status==='waiting'});}
+ return{lane,nodes,edges,time,activeCount};
+}
+
+function flowNode(data,lane,position,time){
+  const indices=lane.indices;
   const event=indices[position]??null;
   if(event==null)return null;
   const e=data.events[event];
@@ -30,10 +37,21 @@ export function executionFlow(data,time,key=data.streamLanes[0]?.key){
    status==='queued'?'Submitted; wait cause not recorded':
    status==='launching'?'Host launch call in progress':status==='future'?'Host has not launched this yet':'Host launch timing unavailable';
   return{event,group:data.groups[e[2]],status,blocker,detail,start:e[0],end:e[0]+e[1],progress:status==='done'?1:status==='running'?clamp((time-e[0])/(e[1]||1),0,1):0};
- });
- const present=nodes.filter(Boolean),edges=[];
- if(lane.known)for(let i=1;i<present.length;i++){if(present[i-1].end<=present[i].start)edges.push({from:present[i-1].event,to:present[i].event,waiting:present[i].status==='waiting'});}
- return{lane,nodes,edges,time,activeCount};
+}
+
+// Focus follows the pinned launch, even when the replay cursor is elsewhere.
+// Only adjacent, non-overlapping records in a known lane establish order.
+export function kernelDependencies(data,index,time){
+ const event=data.events[index];
+ const lane=event&&data.streamLanes.find(l=>l.key===`${event[8]??'?'}:${event[3]??'?'}`);
+ if(!lane)return{lane:null,nodes:[],edges:[]};
+ const position=lowerBound(lane.indices,index),nodes=[position-1,position,position+1].map(p=>flowNode(data,lane,p,time));
+ const edges=[];
+ if(lane.known)for(let i=0;i<2;i++){
+  const a=nodes[i],b=nodes[i+1];
+  if(a&&b&&a.end<=b.start)edges.push({from:a.event,to:b.event,waiting:b.status==='waiting',satisfied:a.end<=time});
+ }
+ return{lane,nodes,edges};
 }
 
 export function flowSummary(flow,data){

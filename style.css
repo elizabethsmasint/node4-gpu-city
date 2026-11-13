@@ -25,3 +25,20 @@
 .flow-mode{container-type:inline-size}
 @container(max-width:620px){.flow-mode .city-canvas-wrap{min-height:680px}}
 #speed-note{max-width:140px;line-height:1.4}
+
+/* Progress lives inside the memory boxes, on the operation's educational clock. */
+.transfer-heading{display:flex;flex-direction:column;gap:5px;margin:12px 0 8px;text-align:center}
+.transfer-heading>span{font-size:8px;letter-spacing:1px;color:#63745d}
+.transfer-heading>b{font-size:11px;color:#2f533f}
+.transfer-boxes{display:grid;grid-template-columns:minmax(0,1fr) 27px minmax(0,1fr);align-items:center;gap:4px}
+.transfer-box{position:relative;isolation:isolate;overflow:hidden;min-width:0;height:91px;border:1px solid #97b4a1;border-radius:7px;background:#f8faf3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#203d30}
+.transfer-box.dram{border-color:#98b7c6;color:#254351}
+.transfer-fill{position:absolute;z-index:-1;inset:0;background:#a4d4b6;transform:scaleY(0);transform-origin:bottom;border-top:2px solid #3c8b5f}
+.dram .transfer-fill{background:#b1d5e6;border-color:#548fae}
+.transfer-box>strong{font-size:12px;letter-spacing:1.2px}.transfer-box>b{font-size:20px;font-variant-numeric:tabular-nums}.transfer-box>small{font-size:9px}
+.transfer-arrow{font-size:23px;text-align:center;color:#496b56}
+.dependency-box{margin:14px 12px;padding:12px;border:1px solid var(--line);border-radius:7px;background:#f4f6ef;min-width:0}
+.dependency-heading{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}.dependency-heading b{font-size:12px}.dependency-heading small{font-size:9px;color:#63755f}
+.dependency-node{width:100%;display:flex;flex-direction:column;gap:4px;text-align:left;padding:9px 11px;min-width:0}.dependency-node small{font-size:8px;letter-spacing:1px;color:#64755f}.dependency-node strong{font-size:12px;overflow-wrap:anywhere}.dependency-node span{font-size:10px;font-weight:400;color:#52644f}.dependency-node.selected{border:2px solid #49765c;background:#e6efdd}.dependency-node[data-status=waiting]{background:#fff1d9;border-color:#c49b52}.dependency-node[data-status=waiting] span{color:#805c23}.dependency-node[data-status=running] span{color:#22684e;font-weight:650}
+.dependency-link{display:flex;align-items:center;gap:8px;margin-left:19px;color:#58715d;font-size:9px;height:30px}.dependency-link span{font-size:22px;line-height:1}.dependency-link.waiting{color:#91651f;font-weight:650}.dependency-unproven,.dependency-empty{font-size:9px;color:#6d7968;text-align:center;padding:9px 0}.dependency-box>p{font-size:9px;line-height:1.6;color:#66765e;margin:10px 0 0}
+@media(min-width:651px) and (max-width:980px){.dependency-box{grid-column:1;grid-row:3;align-self:start}}

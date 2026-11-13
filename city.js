@@ -1,6 +1,7 @@
 import {colors,clamp} from './core.js';
 import {drawOverview} from './overview.js';
 import {drawFlow} from './flow.js';
+import {transferProgress} from './transfers.js';
 export function fitCanvas(canvas){const r=canvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2);const w=Math.max(1,r.width),h=Math.max(1,r.height);if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return{ctx,w,h};}
 const mix=(a,b,t)=>a+(b-a)*t;
 export class City{
@@ -92,9 +93,9 @@ export class Operation{
   }
   if(cat==='fill'){
    const recorded=this.operator?.name==='aten::fill_'?Number(this.operator.concrete_inputs?.at(-1)):NaN;const scalar=Number.isFinite(recorded)?recorded:g.semantics?.fill_value??'?';text('SCALAR',40,49,7);rect(18,58,44,39,color);text(scalar,40,84,20);text(scalar==='?'?'value unknown':Number.isFinite(recorded)?'recorded scalar':'0 in attributed family',43,113,6);
-   text('DESTINATION BUFFER',190,45,7);const written=Math.min(24,Math.floor(phase*28));const values=Array.from({length:24},(_,i)=>i<written?scalar:'·');
+   text('DESTINATION BUFFER',190,45,7);const transfer=transferProgress(g,this.time),written=Math.min(24,Math.floor(transfer.dram*24));const values=Array.from({length:24},(_,i)=>i<written?scalar:'·');
    for(let i=0;i<24;i++){const x=125+(i%8)*17,y=56+Math.floor(i/8)*23;rect(x,y,15,20,i<written?'#dcc9ed':'#fbfcf6','#c9d2bd');text(values[i],x+7.5,y+13,9);}
-   arrow(66,78,118,78,true);const p=Math.min(23,written);worker(132+(p%8)*17,48+Math.floor(p/8)*23);text('write → advance → write',188,146,8);c.restore();return `WRITE · ${written} / 24 representative elements initialized`;
+   arrow(66,78,118,78,transfer.phase==='store');const p=Math.min(23,written);worker(132+(p%8)*17,48+Math.floor(p/8)*23);text('write → advance → write',188,146,8);c.restore();return transfer.phase==='compute'?'PREPARE · scalar fill value':`WRITE · ${written} / 24 representative elements initialized`;
   }
   if(cat==='matmul'){
    text('A · 2×4',43,43,7);text('B · 4×2',126,43,7);text('C · 2×2',233,43,7);tile(12,53,a,stage===0);tile(111,53,b,stage===0,2);tile(218,53,stage===2?[15,25,18,33]:['·','·','·','·'],stage===2,2);text('×',88,76,14);text('→',183,76,15);rect(12,132,255,21,'#dcebd9');text('C[0,0] = 2×1 + 4×2 + 1×2 + 3×1 = 15',140,146,7);for(let i=0;i<4;i++)worker(171+i*23,108+Math.sin(phase*18+i)*2);

@@ -1,7 +1,8 @@
 import {colors,categories,esc,num,ms,duration,bytes,clamp,prepare,eventRange,groupMatches,nextIndex,zoomRange,advance,compareTime,aggregate,threads,lowerBound,operationFamilies,replayWindow} from './core.js';
 import {City,Operation,fitCanvas} from './city.js';
 import {operationNames,operationActions} from './overview.js';
-import {executionFlow,flowSummary,flowStates,launchName} from './flow.js';
+import {executionFlow,flowSummary,flowStates,launchName,kernelDependencies} from './flow.js';
+import {transferProgress} from './transfers.js';
 const $=id=>document.getElementById(id);
 const state={data:null,catalog:null,view:'replay',cityDetail:'overview',layout:'flow',flowStream:null,playing:false,speed:.1,time:0,start:0,end:1,selected:0,query:'',category:'all',follow:false,sort:'time',filtered:new Set(),matching:[],timelineDirty:true,visualClock:0,compareTime:0,comparePlaying:false,compareData:[],relative:false};
 const cache=new Map();let loadSequence=0,lastFrame=performance.now(),lastText=0,sources=null;
@@ -23,7 +24,7 @@ function renderGroups(){if(!state.data)return;let groups=state.data.groups.filte
 function renderIssues(){$('issues').innerHTML=state.data.issues.map((issue,i)=>`<button class="issue" data-issue="${i}"><span class="label-note ${issue.kind==='hypothesis'?'hypothesis':''}">${issue.kind.toUpperCase()}</span><h4>${esc(issue.title)}</h4><strong class="issue-cost">${ms(issue.cost_ns)}</strong><p>${esc(issue.detail)}</p><p><b>Investigate:</b> ${esc(issue.hypothesis)}</p></button>`).join('');}
 function setFilters(category='all',query=''){state.category=category;state.query=query;$('category').value=category;$('search').value=query;renderGroups();}
 function selectEvent(index,{seek=true,zoom=false}={}){const d=state.data;if(!d||index==null||!d.events[index])return;state.selected=index;const e=d.events[index],g=d.groups[e[2]],op=e[7]!=null?d.operators[e[7]]:null;if(seek){state.flowStream=`${e[8]??'?'}:${e[3]??'?'}`;$('flow-stream').value=state.flowStream;state.playing=false;state.time=e[0]+Math.max(.001,e[1]/2);updatePlay();}if(zoom){const width=Math.max(e[1]*6,10000);state.start=clamp(e[0]-width*.25,0,Math.max(0,d.duration_ns-width));state.end=Math.min(d.duration_ns,state.start+width);}
- operation.set(g,op);$('event-index').textContent=`#${num(index+1)} / ${num(d.events.length)}`;
+ operation.set(g,op);renderTransfers();renderDependencies();$('event-index').textContent=`#${num(index+1)} / ${num(d.events.length)}`;
  $('inspect-summary').innerHTML=`<h2 class="kernel-heading"><i class="swatch" style="--swatch:${colors[g.category]}"></i>${esc(g.label)}</h2><div class="kernel-badges"><span>${esc(g.category.toUpperCase())}</span><span>${esc((g.dtype??'dtype unavailable').split(' (')[0])}</span><span>${duration(e[1])}</span><span>PINNED ORDER</span></div><p class="kernel-description">${esc(g.semantics.explanation)}</p>`;
  const grid=g.grid?.join(' × ')??'Unavailable',block=g.block?.join(' × ')??'Unavailable';
  const metrics=[['This launch',duration(e[1])],['Mean / signature',duration(g.avg_ns)],['Launches / signature',num(g.count)],['GPU total / signature',ms(g.total_ns)],['% summed kernel time',num(g.pct,3)+'%'],['Start / capture',ms(e[0])],['Grid XYZ',grid],['Block XYZ',block],['Launched threads',num(threads(g))],['Registers / thread',num(g.registers_per_thread)],['Static shared / block',bytes(g.static_shared_bytes)],['Dynamic shared / block',bytes(g.dynamic_shared_bytes)],['Shared / block (combined)',bytes(g.shared_bytes??(g.static_shared_bytes!=null&&g.dynamic_shared_bytes!=null?g.static_shared_bytes+g.dynamic_shared_bytes:null))],['Device / stream',`${e[8]??'?'} / ${e[3]??'?'}`],['Correlation ID',e[4]??'Unavailable'],['Host launch API duration',duration(e[6])],['GPU start − API end',e[5]!=null?duration(e[0]-e[5]-e[6]):'Unavailable']];
@@ -36,6 +37,34 @@ function selectEvent(index,{seek=true,zoom=false}={}){const d=state.data;if(!d||
  if(g.counter_sample){const c=g.counter_sample;memoryHTML+=`<p><span class="label-note">SEPARATE NCU SAMPLE</span>L2 traffic: <b>${bytes(c.L2_bytes)}</b>; replay duration ${duration(c.duration_s*1e9)}.</p><p>${esc(c.note)}</p><details><summary>Sample provenance</summary><code>${esc(c.raw_csv)} · sample ${esc(c.sample_id)}<br>SHA-256 ${esc(c.sha256)}</code></details>`;}
  $('inspect-details').innerHTML=`<div class="metrics">${metricHTML}</div><div class="detail-section"><p>Thread count is grid × block, not simultaneously resident threads. Host API duration may overlap GPU execution. Queue delay is not launch overhead; negative values mean execution began before the API returned.</p></div><div class="detail-section"><h4>Tensor & operator evidence</h4>${opHTML}</div><div class="detail-section"><h4>Memory evidence</h4>${memoryHTML}</div><div class="detail-section"><h4>Place in the training step</h4><p>${esc(sem.dependency)}</p><p>Previous: ${index>0?esc(d.groups[d.events[index-1][2]].label):'Start of capture'}<br>Following: ${index+1<d.events.length?esc(d.groups[d.events[index+1][2]].label):'End of capture'}</p><div class="neighbor-buttons"><button id="inspect-prev">← Previous order</button><button id="inspect-next">Next order →</button></div><p>${esc(d.phase_note)}</p></div><div class="detail-section"><h4>Performance context</h4><p>${num(g.count)} launches contribute ${ms(g.total_ns)}. ${g.avg_ns<10000?'Frequent short work may merit a batching/fusion investigation. Short duration alone does not establish an inefficiency.':'Prioritize this group by its aggregate cost; a long or memory-heavy kernel is not automatically avoidable.'}</p>${sem.logical_bytes?'<p>These exact large add/fill groups are absent in Stage A. This measured removal precedes custom Triton fusion.</p>':''}</div><div class="detail-section"><details><summary>Exact GPU implementation</summary><p><code>${esc(g.name)}</code></p><p><code>${esc(g.mangled??'Mangled name unavailable')}</code></p><p>Signature fingerprint: ${esc(g.fingerprint)}</p></details>${sem.source?`<button class="source-link" data-source="${esc(sem.source)}" data-line="${sem.source_line}">View ${esc(sem.source)}:${sem.source_line} ↗</button>`:'<p>Source location: unavailable for this implementation.</p>'}</div>`;
  renderGroups();state.timelineDirty=true;
+}
+function renderTransfers(){
+ const transfer=transferProgress(operation.group,operation.time);
+ $('transfer-phase').textContent=transfer.label;
+ $('transfer-arrow').textContent=transfer.phase==='load'?'←':transfer.phase==='store'?'→':transfer.phase==='compute'?'⋯':'?';
+ for(const name of ['gpu','dram']){
+  const value=transfer[name],percent=value==null?'—':`${Math.floor(value*100)}%`,note=transfer[name+'Note'];
+  $('transfer-'+name+'-fill').style.transform=`scaleY(${value??0})`;
+  $('transfer-'+name+'-percent').textContent=percent;
+  $('transfer-'+name+'-note').textContent=note;
+  $('transfer-'+name).setAttribute('aria-label',`${name.toUpperCase()}: ${note}${value==null?'':`, ${percent}`} · illustrative tile transfer`);
+ }
+}
+function renderDependencies(){
+ const focus=kernelDependencies(state.data,state.selected,state.time);
+ $('dependency-lane').textContent=focus.lane?`Device ${focus.lane.device??'?'} / stream ${focus.lane.stream??'?'}`:'No recorded launch';
+ const html=focus.nodes.map((node,i)=>{
+  const role=['PRECEDING KERNEL','SELECTED KERNEL','FOLLOWING KERNEL'][i];
+  let link='';
+  if(i>0&&node&&focus.nodes[i-1]){
+   const edge=focus.edges.find(e=>e.from===focus.nodes[i-1].event&&e.to===node.event);
+   link=edge?`<div class="dependency-link ${edge.waiting?'waiting':''}"><span aria-hidden="true">↓</span>${edge.waiting?'Must finish first':edge.satisfied?'Prerequisite finished':'Stream order'}</div>`:
+    `<div class="dependency-unproven">${focus.lane.known?'Overlapping intervals · no arrow':'Order unknown · no arrow'}</div>`;
+  }
+  if(!node)return`<div class="dependency-empty">${i===0?'No earlier kernel recorded':'No later kernel recorded'}</div>`;
+  return`${link}<button class="dependency-node ${i===1?'selected':''}" data-event="${node.event}" data-status="${node.status}" aria-pressed="${i===1}" title="${esc(node.group.label??node.group.name)}"><small>${role}</small><strong>${esc(launchName(state.data,node.event))}</strong><span>${flowStates[node.status]}${node.blocker==null?'':` · waits for #${num(node.blocker+1)}`}</span></button>`;
+ }).join('');
+ if($('dependency-chain').innerHTML!==html)$('dependency-chain').innerHTML=html;
 }
 function updatePlay(){$('play').innerHTML=state.playing?'Ⅱ <span>Pause</span>':'▶ <span>Play</span>';$('play').setAttribute('aria-label',state.playing?'Pause':'Play');}
 function playToggle(){if(!state.data)return;if(state.time>=state.data.duration_ns)state.time=0;state.playing=!state.playing;updatePlay();}
@@ -119,6 +148,7 @@ function bind(){
  $('zoom-in').onclick=()=>zoom(.25);$('zoom-out').onclick=()=>zoom(4);$('zoom-event').onclick=()=>selectEvent(state.selected,{zoom:true});$('fit').onclick=()=>fit(true);$('city-reset').onclick=()=>fit();
  $('scrubber').oninput=()=>{state.time=+$('scrubber').value/100000*state.data.duration_ns;state.playing=false;updatePlay();ensureVisible();};
  $('operation-play').onclick=()=>{operation.running=!operation.running;$('operation-play').textContent=operation.running?'Ⅱ':'▶';};
+ $('dependency-chain').onclick=e=>{const b=e.target.closest('[data-event]');if(b?.dataset.event!=null)inspectFlow(+b.dataset.event);};
  $('inspect-details').onclick=e=>{if(e.target.id==='inspect-prev')selectEvent(Math.max(0,state.selected-1));if(e.target.id==='inspect-next')selectEvent(Math.min(state.data.events.length-1,state.selected+1));const b=e.target.closest('[data-source]');if(b)openSource(b.dataset.source,+b.dataset.line).catch(error);};
  $('city').onclick=e=>{const r=$('city').getBoundingClientRect(),hit=city.hit(e.clientX-r.left,e.clientY-r.top);if(hit){if(state.layout==='flow')inspectFlow(hit.event);else selectEvent(hit.event);}};
  $('inspect-active').onclick=()=>{if(state.layout==='flow'){const active=executionFlow(state.data,state.time,state.flowStream).nodes[1];if(active)inspectFlow(active.event);return;}const a=currentActivity();const shown=visibleOrders(a.orders);if(shown.length)selectEvent(shown[0].event);};
@@ -145,7 +175,7 @@ function frame(now){const dt=Math.max(0,now-lastFrame);lastFrame=now;
   const shown=state.time>=state.data.duration_ns?[]:visibleOrders(a.orders),shownCount=shown.reduce((n,o)=>n+o.count,0);
   const flow=state.layout==='flow'?executionFlow(state.data,state.time,state.flowStream):null;
   city.draw(shown,state.visualClock,{smCount:state.data.hardware?.[0]?.smCount??48,memory:a.memory,exact:window===0,completed:state.time>=state.data.duration_ns,dispatch:a.dispatch,flow,selected:state.selected,matches:flowMatches});
-  const stage=operation.draw(dt);if(now-lastText>100){$('operation-stage').textContent=stage;$('city-clock').textContent=ms(state.time);$('city-activity').textContent=flow?`${num(flow.activeCount??0)} running on this stream · exact cursor`:window?`${num(shownCount)} shown / ${num(a.count)} recorded · last ${duration(Math.min(window,state.time))}`:`${num(a.count)} active / ${num(shownCount)} shown · ${num(a.dispatch)} host launches${a.memory.length?' · '+a.memory.length+' memory activities':''}`;$('order-now').textContent=flow?flowSummary(flow,state.data):shown.length?shown.slice(0,3).map(o=>o.group.label).join(' · '):state.time>=state.data.duration_ns?'Capture complete':a.count?'Recorded kernels hidden by operation filter':'No captured kernel executing at this cursor';$('time-readout').textContent=`${ms(state.time)} / ${ms(state.data.duration_ns)}`;$('scrubber').value=Math.round(state.time/state.data.duration_ns*100000);if(flow)renderFlowSummary(flow);else if(state.cityDetail==='overview')renderOverviewSummary(shown,window,a.count);lastText=now;}
+  const stage=operation.draw(dt);renderTransfers();if(now-lastText>100){renderDependencies();$('operation-stage').textContent=stage;$('city-clock').textContent=ms(state.time);$('city-activity').textContent=flow?`${num(flow.activeCount??0)} running on this stream · exact cursor`:window?`${num(shownCount)} shown / ${num(a.count)} recorded · last ${duration(Math.min(window,state.time))}`:`${num(a.count)} active / ${num(shownCount)} shown · ${num(a.dispatch)} host launches${a.memory.length?' · '+a.memory.length+' memory activities':''}`;$('order-now').textContent=flow?flowSummary(flow,state.data):shown.length?shown.slice(0,3).map(o=>o.group.label).join(' · '):state.time>=state.data.duration_ns?'Capture complete':a.count?'Recorded kernels hidden by operation filter':'No captured kernel executing at this cursor';$('time-readout').textContent=`${ms(state.time)} / ${ms(state.data.duration_ns)}`;$('scrubber').value=Math.round(state.time/state.data.duration_ns*100000);if(flow)renderFlowSummary(flow);else if(state.cityDetail==='overview')renderOverviewSummary(shown,window,a.count);lastText=now;}
   drawTimeline();
  }
  if(state.view==='compare'&&state.compareData.length){const total=state.compareData[0].duration_ns;if(state.comparePlaying){state.compareTime=advance(state.compareTime,dt,.1,total);state.visualClock+=dt/1000;if(state.compareTime===total){state.comparePlaying=false;$('compare-play').textContent='▶ Play comparison';}}state.compareData.forEach((d,i)=>{const t=compareTime(state.compareTime,d.duration_ns,total,state.relative),window=replayWindow(d.duration_ns,true),a=activity(d,t,window);miniCities[i].draw(t>=d.duration_ns?[]:a.orders,state.visualClock,{smCount:d.hardware[0]?.smCount??48,completed:t>=d.duration_ns,memory:a.memory,dispatch:a.dispatch});$('compare-now-'+i).textContent=`${ms(t)} · ${a.count} orders / ${duration(Math.min(window,t))} window`;});$('compare-clock').textContent=ms(state.compareTime);$('compare-scrubber').value=Math.round(state.compareTime/total*100000);}
