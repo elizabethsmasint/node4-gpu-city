@@ -1,6 +1,7 @@
 import {colors,categories,num,ms,lowerBound,upperBound,clamp} from './core.js';
+import {executionModel} from './execution.js';
 import {operationNames} from './overview.js';
-import {executionFlow,flowSummary} from './flow.js?v=big-picture-3';
+import {executionFlow,flowSummary} from './flow.js?v=execution-4';
 
 // Keep every launch in the overview, independent of inspector filters or zoom.
 // At capture scale several launches can share a pixel; the source index remains
@@ -15,9 +16,9 @@ export function captureRows(data){
 }
 export class CaptureMap{
  constructor(canvas){this.canvas=canvas;this.data=null;this.rows=[];this.base=document.createElement('canvas');this.signature='';}
- render(data,time,selected){
-  if(this.data!==data){this.data=data;this.rows=captureRows(data);this.signature='';}
-  const w=Math.max(1,this.canvas.getBoundingClientRect().width),h=30+this.rows.length*23,dpr=Math.min(2,globalThis.devicePixelRatio||1);
+ render(data,time,selected,window=null){
+  if(this.data!==data){this.data=data;this.rows=captureRows(data);this.model=executionModel(data);this.memoryRows=[];for(const lane of this.model.lanes)for(const kind of ['memcpy','memset']){const nodes=lane.nodes.filter(n=>n.kind===kind);if(nodes.length)this.memoryRows.push({lane,kind,nodes});}this.signature='';}
+  const w=Math.max(1,this.canvas.getBoundingClientRect().width),h=30+(this.rows.length+this.memoryRows.length+1)*23,dpr=Math.min(2,globalThis.devicePixelRatio||1);
   const left=w<600?90:135,right=w-12,span=right-left,x=t=>left+t/data.duration_ns*span;
   const signature=`${w}:${h}:${dpr}`;
   this.canvas.style.height=h+'px';this.left=left;this.right=right;
@@ -29,6 +30,8 @@ export class CaptureMap{
     const row=this.rows[r];b.fillStyle=colors[row.category];
     for(const i of row.indices){const e=data.events[i];b.fillRect(x(e[0]),25+r*23,Math.max(.8,e[1]/data.duration_ns*span),12);}
    }
+   this.memoryRows.forEach((row,r)=>{b.fillStyle='#78bcea';for(const n of row.nodes)b.fillRect(x(n.start),25+(this.rows.length+r)*23,Math.max(.8,(n.end-n.start)/data.duration_ns*span),12);});
+   const gy=25+(this.rows.length+this.memoryRows.length)*23;b.fillStyle='#9c7049';let last=-Infinity;for(const [a,z] of this.model.gaps){const end=Math.ceil(x(z));if(end<=last)continue;b.fillRect(x(a),gy,Math.max(.8,x(z)-x(a)),12);last=end;}
   }
   const c=this.canvas.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,h);
   c.font='10px sans-serif';c.fillStyle='#acbdab';
@@ -43,6 +46,12 @@ export class CaptureMap{
   }
   const event=data.events[selected];
   if(event){const row=this.rows.findIndex(r=>r.category===data.groups[event[2]].category&&r.lane.key===`${event[8]??'?'}:${event[3]??'?'}`);if(row>=0){c.strokeStyle='#f0d293';c.lineWidth=2;c.strokeRect(x(event[0])-2,23+row*23,Math.max(4,event[1]/data.duration_ns*span+4),16);}}
+  for(let r=0;r<this.memoryRows.length;r++){
+   const row=this.memoryRows[r],y=25+(this.rows.length+r)*23;c.fillStyle='#78bcea';c.font='10px sans-serif';c.textAlign='left';c.fillText(row.kind+' D'+row.lane.device+'/S'+row.lane.stream,0,y+10,left-6);
+
+  }
+  const gy=25+(this.rows.length+this.memoryRows.length)*23;c.fillStyle='#d7af79';c.font='9px sans-serif';c.textAlign='left';c.fillText('No captured GPU activity',0,gy+8,left-5);c.fillText(ms(this.model.totalGap)+' total',0,gy+18,left-5);
+  if(window){c.strokeStyle='#f5f1db';c.lineWidth=1;c.strokeRect(x(window[0]),19,Math.max(2,(window[1]-window[0])/data.duration_ns*span),h-20);}
   c.strokeStyle='#eff2cb';c.lineWidth=1.5;c.beginPath();c.moveTo(x(time),17);c.lineTo(x(time),h);c.stroke();
   this.canvas.setAttribute('aria-label',`Entire capture: ${num(data.events.length)} kernels across ${data.streamLanes.length} streams, ${num(done)} finished. Click a row to inspect a launch; use the position slider to seek.`);
   const set=(id,value)=>{const el=document.getElementById(id);if(el.textContent!==value)el.textContent=value;};
@@ -54,11 +63,17 @@ export class CaptureMap{
  hit(clientX,clientY){
   if(!this.data)return null;
   const rect=this.canvas.getBoundingClientRect(),r=Math.floor((clientY-rect.top-23)/23),row=this.rows[r];
-  if(!row)return null;
+  if(!row){
+   const time=clamp((clientX-rect.left-this.left)/(this.right-this.left),0,1)*this.data.duration_ns;
+   const mr=this.memoryRows[r-this.rows.length];if(mr){const node=mr.nodes.find(n=>n.start<=time&&n.end>time);return node?{node}:{time};}
+   if(r===this.rows.length+this.memoryRows.length){const gap=this.model.gaps.find(([a,b])=>a<=time&&time<b);return gap?{gap}:null;}return null;
+  }
   const time=clamp((clientX-rect.left-this.left)/(this.right-this.left),0,1)*this.data.duration_ns;
   const at=lowerBound(row.indices,time,i=>this.data.events[i][0]);
-  return row.indices.slice(Math.max(0,at-1),at+1).sort((a,b)=>{
+  const nearest=row.indices.slice(Math.max(0,at-1),at+1).sort((a,b)=>{
    const distance=i=>{const e=this.data.events[i];return Math.max(e[0]-time,time-e[0]-e[1],0);};return distance(a)-distance(b);
   })[0]??null;
+  if(nearest!=null){const e=this.data.events[nearest];if(e[0]<=time&&time<e[0]+e[1])return nearest;}
+  return {time,category:row.category};
  }
 }

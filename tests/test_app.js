@@ -115,4 +115,18 @@ check(get('capture-completed').textContent.includes(app.state.data.events.length
 get('capture-position').value=0;get('capture-position').oninput();
 check(app.board.model.nodes.every(n=>n.transfer.dram==null||n.transfer.dram===0),'Explicit rewind clears future outputs');
 app.operation.time=5500;get('operation-play').click();check(app.operation.time===0&&app.operation.running,'Finished detail tile can be replayed explicitly');
+// Graph controls use the same production state and inspector.
+get('graph-fit').click();app.graph.render();
+check(app.state.start===0&&app.state.end===app.state.data.duration_ns,'Graph fit shares the existing timeline range');
+check(app.graph.model.nodes.length===app.state.data.events.length+app.state.data.memory.length,'Graph keeps all GPU activities');
+get('graph-launch').value='100000';get('graph-launch-go').click();app.graph.render();
+check(app.state.selected===99999&&app.state.start<=app.state.data.events[99999][0]&&app.state.end>=app.state.data.events[99999][0],'Launch ID lookup reveals any detailed node');
+check(get('inspect-summary').innerHTML.includes(app.operation.group.label),'Graph selection updates existing inspector');
+const graphRange=app.state.end-app.state.start;get('graph-zoom-in').click();app.graph.render();
+check(app.state.end-app.state.start<graphRange,'Graph zoom updates the shared time axis');
+get('graph-fit').click();app.graph.render();get('graph-next-page').click();app.graph.render();
+check(app.graph.page===1,'Individual activity pages remain accessible at full capture scale');
+const fullGap=app.graph.model.gaps[0];app.graph.inspectGap(fullGap);app.graph.render();
+check(get('graph-detail').innerHTML.includes('cause unknown')&&!app.state.followCursor,'Gap inspection pins the playhead and preserves unknown cause');
+check(app.capture.memoryRows.length>0,'Whole-capture overview includes memory lanes');
 print(`PASS: ${assertions} application handler checks with real traces (DOM shim; browser layout not verified)`);

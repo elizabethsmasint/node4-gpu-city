@@ -31,7 +31,7 @@ publishing repository; pushing to `main` triggers `pages build and deployment`.
 Live site: https://elizabethsmasint.github.io/node4-gpu-city/
 
 The editable application copy is also in `../../../gpu_city/web`. Keep the HTML,
-JavaScript, styles, and tests synchronized. Current asset version: `big-picture-3`.
+JavaScript, styles, and tests synchronized. Current asset version: `execution-4`.
 
 ## Verification
 
@@ -47,3 +47,66 @@ For the November 13 update, logic checks passed. Browser QA and publication are
 blocked in the current session: socket creation is prohibited, sandbox escalation
 was rejected. The final GitHub push failed because authentication was unavailable
 (`could not read Username`). The live site has not yet been updated with this release.
+
+## Recorded execution graph
+
+The graph uses the existing visual style, shared playhead and timeline zoom.
+Drag to pan, scroll to zoom, or use the buttons. Click a group to expand it.
+Every individual launch is available through the paged activity list and the
+one-based Launch ID field. Fit capture, Go to selected kernel and Focus
+highlighted path change the shared time window. The full-capture overview stays
+visible and marks that window.
+
+Original has one observed kernel/memory lane. Gold outlines and edges therefore
+show **Recorded serial execution chain**, not a proven CPU/GPU critical path.
+Stream-order edges are emitted only for known, non-overlapping adjacent records;
+recorded overlaps are preserved. No tensor dependencies are asserted. With
+multiple lanes the selected lane is highlighted, without choosing a supposed
+critical path by aggregate duration or stream length. Group envelopes can
+contain gaps; expand them for exact execution bars. Operation colors are retained.
+
+The raw Nsight source now supplies kernel context/process/grid identities,
+118,552 relevant Original host calls, 2,353 memory activities, seven overlapping
+GPU synchronization records and the exported CUDA event records. An API's start
+is an observed lower bound on submission; return is not the submission instant.
+Dashed links show this distinction. Cross-stream event-wait links require an
+exact device/context/process/eventId/eventSyncId join and a measured device event
+completion. This cohort supplies no resolvable links: CUDA event timestamps are
+zero and stream waits have invalid event identity sentinels. Missing links are
+not reconstructed from nearby timestamps.
+
+The no-captured-activity band uses the complete union of kernels, memcpy and
+memset, including capture boundaries and overlaps counted once. Original has
+118,202 gaps totaling **344.803921 ms**, largest **91.923200 ms**, unchanged from
+the prior dataset. Its elapsed capture is **6799.414352 ms**; summed kernel time
+is **6413.593919 ms** and kernel union is **6413.519903 ms**. These differ from
+the independently measured step wall mean. The source includes 338 adjacent
+kernel overlaps; no finish-to-start edges are invented for those pairs.
+
+Click gaps for neighbors, timestamps, duration, overlapping host calls and
+synchronization, and the next activity's correlated API timing. Empty category
+rows, memory-only intervals and intervals without captured GPU activity have
+distinct explanations. Missing activity establishes no CPU cause, removable
+latency or guaranteed step-time saving. Internal kernel stalls occur within
+execution bars. Ranked signature and individual-launch contributions are
+investigation priorities, not guaranteed optimization savings.
+
+Full critical-path attribution would additionally need CPU scheduling and call
+stacks, model NVTX ranges, usable CUDA event/wait identities with device completion
+timing, and buffer producer/consumer evidence. Other GPU processes and untraced
+engines are outside the capture.
+
+`tools/normalize.py convert capture.sqlite --output replay.json` retains the
+new evidence for future imports (Python standard library only). The canonical
+Node4 pipeline is also updated in `gpu_city/normalize.py` in the local Node4
+workspace. This repository's build command expects its source results under
+`results/` and writes derived datasets into `data/`.
+
+Validation: `python3 tests/run_checks.py` checks graph math, full-record gap
+accounting, concurrency, shared graph controls, launch lookup, inspector linking
+and existing UI behavior. `python3 tests/verify_source_execution.py --source-root
+/path/to/node4_spark_v2 --output data/execution-validation.json` independently
+compares every kernel and memory record, relevant host call, synchronization
+record, CUDA event record, source hash and union/gap totals against SQLite. The
+saved report is linked from Evidence & data. Browser QA is blocked in this
+session by socket restrictions; live layout and interaction are not verified.

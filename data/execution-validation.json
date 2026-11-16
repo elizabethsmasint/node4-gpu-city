@@ -1,0 +1,69 @@
+{
+  "verified": "Every kernel identity/duration/stream, every memory record, relevant host API, synchronization record, CUDA event record, source hash and full activity-union gap totals",
+  "captures": [
+    {
+      "dataset": "original",
+      "kernels": 116186,
+      "memory": 2353,
+      "host_calls": 118552,
+      "synchronization": 7,
+      "kernel_lanes": 1,
+      "adjacent_kernel_overlaps": 338,
+      "all_gap_count": 118202,
+      "no_activity_ns": 344803921,
+      "max_gap_ns": 91923200,
+      "elapsed_ns": 6799414352,
+      "kernel_sum_ns": 6413593919,
+      "kernel_union_ns": 6413519903,
+      "source_sha256": "5f71d949226087bed447860f3d0ce148122336773721aca803ec0fa5378bcbe4"
+    },
+    {
+      "dataset": "optimized",
+      "kernels": 109090,
+      "memory": 1841,
+      "host_calls": 110944,
+      "synchronization": 7,
+      "kernel_lanes": 1,
+      "adjacent_kernel_overlaps": 338,
+      "all_gap_count": 110594,
+      "no_activity_ns": 336726768,
+      "max_gap_ns": 100017376,
+      "elapsed_ns": 3796477296,
+      "kernel_sum_ns": 3418735104,
+      "kernel_union_ns": 3418669120,
+      "source_sha256": "d06d75a535caba08bee9580bfdde743205d64a3752fabd8fb657daef7886bc3d"
+    },
+    {
+      "dataset": "fused",
+      "kernels": 98850,
+      "memory": 1841,
+      "host_calls": 100704,
+      "synchronization": 7,
+      "kernel_lanes": 1,
+      "adjacent_kernel_overlaps": 338,
+      "all_gap_count": 100354,
+      "no_activity_ns": 319035713,
+      "max_gap_ns": 93911168,
+      "elapsed_ns": 3743567296,
+      "kernel_sum_ns": 3383445439,
+      "kernel_union_ns": 3383370783,
+      "source_sha256": "324f0fe2b212ed519ad823da81ed7495b37700b0b204f81b6511c998af3bfab5"
+    },
+    {
+      "dataset": "historical",
+      "kernels": 116201,
+      "memory": 2355,
+      "host_calls": 118569,
+      "synchronization": 7,
+      "kernel_lanes": 1,
+      "adjacent_kernel_overlaps": 339,
+      "all_gap_count": 118218,
+      "no_activity_ns": 341932464,
+      "max_gap_ns": 43983968,
+      "elapsed_ns": 6785357904,
+      "kernel_sum_ns": 6401736768,
+      "kernel_union_ns": 6401668544,
+      "source_sha256": "7003153e1015a3d513cbfa420aede3d7da553808dad12834ef8d350e3bd96be3"
+    }
+  ]
+}
