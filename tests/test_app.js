@@ -129,4 +129,16 @@ check(app.graph.page===1,'Individual activity pages remain accessible at full ca
 const fullGap=app.graph.model.gaps[0];app.graph.inspectGap(fullGap);app.graph.render();
 check(get('graph-detail').innerHTML.includes('cause unknown')&&!app.state.followCursor,'Gap inspection pins the playhead and preserves unknown cause');
 check(app.capture.memoryRows.length>0,'Whole-capture overview includes memory lanes');
+get('nodegraph-tab').click();app.nodeGraph.render();
+check(app.nodeGraph.active&&!get('nodegraph-pane').hidden&&get('execution-pane').hidden,'Discrete dependency graph is a distinct view');
+check(app.nodeGraph.dag.nodes.size===app.state.data.events.length+app.state.data.memory.length,'Node graph shares the complete measured activity model');
+get('dag-launch').value='100001';get('dag-go').click();app.nodeGraph.render();
+check(app.state.selected===100000&&app.nodeGraph.view.bySource.get('k100000').members.length===1,'Node graph lookup expands and selects an individual launch');
+check(get('dag-relations').innerHTML.includes('Predecessors')&&get('dag-relations').innerHTML.includes('Successors'),'Node inspector exposes dependency neighbors');
+const dagScale=app.nodeGraph.scale,sharedStart=app.state.start,sharedEnd=app.state.end;get('dag-plus').click();app.nodeGraph.render();
+check(app.nodeGraph.scale>dagScale&&app.state.start===sharedStart&&app.state.end===sharedEnd,'Graph camera zoom is independent from timeline scale');
+get('dag-next').click();app.nodeGraph.render();check(app.state.selected===100001,'Graph next launch remains linked to existing details');
+get('dag-collapse').click();app.nodeGraph.render();check(app.nodeGraph.expanded.size===0,'Collapse sequences restores compact topology');
+get('execution-tab').click();check(!app.nodeGraph.active&&get('nodegraph-pane').hidden&&!get('execution-pane').hidden,'Time-based execution view remains available');
+get('nodegraph-tab').click();app.nodeGraph.render();
 print(`PASS: ${assertions} application handler checks with real traces (DOM shim; browser layout not verified)`);

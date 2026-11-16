@@ -1,10 +1,11 @@
 import {colors,categories,esc,num,ms,duration,bytes,clamp,prepare,eventRange,groupMatches,nextIndex,zoomRange,advance,compareTime,aggregate,threads,lowerBound,operationFamilies,replayWindow} from './core.js';
-import {City,Operation,fitCanvas} from './city.js?v=execution-4';
+import {City,Operation,fitCanvas} from './city.js?v=dependency-5';
 import {operationNames,operationActions} from './overview.js';
-import {executionFlow,flowSummary,flowStates,launchName,kernelDependencies} from './flow.js?v=execution-4';
-import {DataFlowBoard,initialDataFlowEvent} from './dataflow.js?v=execution-4';
+import {executionFlow,flowSummary,flowStates,launchName,kernelDependencies} from './flow.js?v=dependency-5';
+import {DataFlowBoard,initialDataFlowEvent} from './dataflow.js?v=dependency-5';
+import {NodeGraph} from './nodegraph.js';
 import {ExecutionGraph} from './graph.js';
-import {CaptureMap} from './capture.js?v=execution-4';
+import {CaptureMap} from './capture.js?v=dependency-5';
 const $=id=>document.getElementById(id);
 const state={data:null,catalog:null,view:'replay',cityDetail:'overview',layout:'flow',flowStream:null,playing:false,followCursor:true,speed:.000001,time:0,start:0,end:1,selected:0,query:'',category:'all',follow:false,sort:'time',filtered:new Set(),matching:[],timelineDirty:true,visualClock:0,compareTime:0,comparePlaying:false,compareData:[],relative:false};
 const cache=new Map();let loadSequence=0,lastFrame=performance.now(),lastText=0,sources=null;
@@ -15,6 +16,7 @@ const graph=new ExecutionGraph($('execution-graph'),state,{
  seek:time=>{state.sequenceEnd=null;state.playing=false;state.followCursor=false;$('follow-cursor').checked=false;state.time=time;updatePlay();},
  range:(start,end)=>{state.start=start;state.end=end;state.timelineDirty=true;graph.dirty=true;}
 });
+const nodeGraph=new NodeGraph($('dependency-graph'),state,graph,index=>selectEvent(index,{seek:true}));
 const city=new City($('city')),operation=new Operation($('operation'));let miniCities=[];
 const timelineStatic=document.createElement('canvas');let timelineW=0,timelineH=0,timelineDrag=null;
 const laneCategories=categories;const laneY=cat=>26+laneCategories.indexOf(cat)*10;
@@ -57,6 +59,7 @@ function renderTransfers(){
  $('sequence-play').disabled=!focus.nodes.length;
  capture.render(state.data,state.time,state.selected,[state.start,state.end]);
  graph.render();
+ nodeGraph.render();
 }
 function followAtCursor(){
  const flow=executionFlow(state.data,state.time,state.flowStream);
@@ -202,5 +205,5 @@ function frame(now){const dt=Math.max(0,now-lastFrame);lastFrame=now;
 }
 async function init(){try{state.catalog=await fetchJSON('data/catalog.json');$('dataset').innerHTML=state.catalog.datasets.map(d=>`<option value="${d.id}">${esc(d.label)}</option>`).join('');bind();renderEvidence();await switchDataset('original');renderComparison();requestAnimationFrame(frame);}catch(e){error(e);}}
 // Small read-only QA surface; the same real controls are used by browser tests.
-window.gpuCity={state,city,operation,board,capture,graph,load,selectEvent,activity,showView,investigate};
+window.gpuCity={state,city,operation,board,capture,graph,nodeGraph,load,selectEvent,activity,showView,investigate};
 init();

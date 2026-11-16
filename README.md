@@ -31,7 +31,7 @@ publishing repository; pushing to `main` triggers `pages build and deployment`.
 Live site: https://elizabethsmasint.github.io/node4-gpu-city/
 
 The editable application copy is also in `../../../gpu_city/web`. Keep the HTML,
-JavaScript, styles, and tests synchronized. Current asset version: `execution-4`.
+JavaScript, styles, and tests synchronized. Current asset version: `dependency-5`.
 
 ## Verification
 
@@ -110,3 +110,42 @@ compares every kernel and memory record, relevant host call, synchronization
 record, CUDA event record, source hash and union/gap totals against SQLite. The
 saved report is linked from Evidence & data. Browser QA is blocked in this
 session by socket restrictions; live layout and interaction are not verified.
+
+
+## Discrete dependency graph view
+
+The default **Dependency graph** tab uses fixed-size cards connected by directed
+arrows. Coordinates follow dependency depth, with long chains folded into rows;
+stream identity and time are labels, not lanes or geometric scales. Gold borders
+and arrowheads highlight the selected stream's recorded execution constraints.
+Original retains the **Recorded serial execution chain** scope and the same
+caveats about missing CPU/GPU critical-path evidence and overlapping records.
+No branches are added to the current source capture. Resolved event/wait anchors
+can produce forks and joins when the trace actually supplies the required evidence.
+
+Select a card to inspect its duration, timestamps, stream, recorded predecessors,
+successors and edge evidence. Neighbor buttons navigate the real dependency
+edges; **Open existing kernel details** reveals the existing detailed inspector.
+Launch ID lookup expands and centers any individual launch. Graph selection
+shares the existing inspector and playhead, while graph pan/zoom leaves the
+timeline's time scale independent. Drag to pan, scroll to zoom, or use keyboard
+arrows and plus/minus. The whole-graph overview navigates the camera. Fit capture,
+Go to selected kernel and Focus highlighted constraints provide spatial views.
+
+Only non-branching sequences collapse, with repeated signature patterns labeled
+as repetitions and generic serial blocks labeled separately. Branch and merge
+nodes stay explicit. Double-click a block or use **Expand selected sequence**;
+**Collapse sequences** restores the compact view. All source activities remain
+addressable. Original initially reduces 118,539 source activities to about 2,950
+cards/blocks, including 1,057 repeated-sequence groups, before local expansion.
+
+The **Execution timeline** tab preserves the previous measured-time view, host
+CUDA calls, GPU waits, memory activities and inspectable gaps. The whole-capture
+category/memory overview and gap band remain available above both views.
+
+`tests/test_dag.js` verifies every source activity survives collapsing, real
+forks/joins remain explicit, Original gains no invented branches, unresolved
+cross-stream relationships stay missing, and timestamps cannot change layout or
+node dimensions. Handler tests verify separate views, independent camera zoom,
+lookup/expansion and predecessor/successor inspection. A Cairo replay of the actual
+Canvas renderer was visually inspected; this is not browser layout verification.

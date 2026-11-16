@@ -1,7 +1,7 @@
 import {colors,clamp} from './core.js';
 import {drawOverview} from './overview.js';
-import {drawFlow} from './flow.js?v=execution-4';
-import {transferProgress} from './transfers.js?v=execution-4';
+import {drawFlow} from './flow.js?v=dependency-5';
+import {transferProgress} from './transfers.js?v=dependency-5';
 export function fitCanvas(canvas){const r=canvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2);const w=Math.max(1,r.width),h=Math.max(1,r.height);if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return{ctx,w,h};}
 const mix=(a,b,t)=>a+(b-a)*t;
 export class City{
