@@ -1,7 +1,7 @@
 import {colors,categories,num,ms,lowerBound,upperBound,clamp} from './core.js';
 import {executionModel} from './execution.js';
 import {operationNames} from './overview.js';
-import {executionFlow,flowSummary} from './flow.js?v=dependency-5';
+import {executionFlow,flowSummary} from './flow.js?v=tensor-6';
 
 // Keep every launch in the overview, independent of inspector filters or zoom.
 // At capture scale several launches can share a pixel; the source index remains

@@ -141,4 +141,16 @@ get('dag-next').click();app.nodeGraph.render();check(app.state.selected===100001
 get('dag-collapse').click();app.nodeGraph.render();check(app.nodeGraph.expanded.size===0,'Collapse sequences restores compact topology');
 get('execution-tab').click();check(!app.nodeGraph.active&&get('nodegraph-pane').hidden&&!get('execution-pane').hidden,'Time-based execution view remains available');
 get('nodegraph-tab').click();app.nodeGraph.render();
+get('tensor-tab').click();
+check(app.tensorGraph.active&&!get('tensor-pane').hidden&&get('nodegraph-pane').hidden,'Tensor dependencies is separate from stream execution order');
+check(app.tensorGraph.graph.kind==='compiler','Default tensor graph uses the saved compiler buffer evidence');
+const tensorKernel=app.tensorGraph.graph.nodes.find(n=>n.kind==='compiled_kernel');app.tensorGraph.inspect(tensorKernel.id);
+check(get('tensor-detail').innerHTML.includes('Reads / consumed tensor values')&&get('tensor-detail').innerHTML.includes('Produces / downstream consumers'),'Tensor inspector exposes values, producers and consumers');
+check(get('tensor-detail').innerHTML.includes('Execution duration: unavailable'),'Source scope does not borrow unrelated kernel timings');
+const tensorTime=app.state.time,tensorRange=[app.state.start,app.state.end],tensorScale=app.tensorGraph.scale;get('tensor-plus').click();
+check(app.tensorGraph.scale>tensorScale&&app.state.time===tensorTime&&app.state.start===tensorRange[0]&&app.state.end===tensorRange[1],'Tensor camera does not alter recorded execution');
+get('tensor-scope-select').value='_chunk_delta_exact_impl';get('tensor-scope-select').onchange();
+check(app.tensorGraph.model.nodes.size===71&&get('tensor-svg').innerHTML.includes('marker-end'),'GDN value graph shows directed tensor arrows');
+get('nodegraph-tab').click();check(!app.tensorGraph.active&&get('tensor-pane').hidden,'Recorded stream-order view remains accessible');
+get('tensor-tab').click();
 print(`PASS: ${assertions} application handler checks with real traces (DOM shim; browser layout not verified)`);

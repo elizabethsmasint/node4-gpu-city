@@ -1,11 +1,12 @@
 import {colors,categories,esc,num,ms,duration,bytes,clamp,prepare,eventRange,groupMatches,nextIndex,zoomRange,advance,compareTime,aggregate,threads,lowerBound,operationFamilies,replayWindow} from './core.js';
-import {City,Operation,fitCanvas} from './city.js?v=dependency-5';
+import {City,Operation,fitCanvas} from './city.js?v=tensor-6';
 import {operationNames,operationActions} from './overview.js';
-import {executionFlow,flowSummary,flowStates,launchName,kernelDependencies} from './flow.js?v=dependency-5';
-import {DataFlowBoard,initialDataFlowEvent} from './dataflow.js?v=dependency-5';
+import {executionFlow,flowSummary,flowStates,launchName,kernelDependencies} from './flow.js?v=tensor-6';
+import {DataFlowBoard,initialDataFlowEvent} from './dataflow.js?v=tensor-6';
+import {TensorGraph} from './tensorgraph.js';
 import {NodeGraph} from './nodegraph.js';
 import {ExecutionGraph} from './graph.js';
-import {CaptureMap} from './capture.js?v=dependency-5';
+import {CaptureMap} from './capture.js?v=tensor-6';
 const $=id=>document.getElementById(id);
 const state={data:null,catalog:null,view:'replay',cityDetail:'overview',layout:'flow',flowStream:null,playing:false,followCursor:true,speed:.000001,time:0,start:0,end:1,selected:0,query:'',category:'all',follow:false,sort:'time',filtered:new Set(),matching:[],timelineDirty:true,visualClock:0,compareTime:0,comparePlaying:false,compareData:[],relative:false};
 const cache=new Map();let loadSequence=0,lastFrame=performance.now(),lastText=0,sources=null;
@@ -17,6 +18,9 @@ const graph=new ExecutionGraph($('execution-graph'),state,{
  range:(start,end)=>{state.start=start;state.end=end;state.timelineDirty=true;graph.dirty=true;}
 });
 const nodeGraph=new NodeGraph($('dependency-graph'),state,graph,index=>selectEvent(index,{seek:true}));
+nodeGraph.active=false;
+const tensorGraph=new TensorGraph(state,()=>{nodeGraph.active=false;$('tensor-pane').hidden=false;$('nodegraph-pane').hidden=true;$('execution-pane').hidden=true;for(const id of ['nodegraph-tab','execution-tab']){$(id).classList.toggle('active',false);$(id).setAttribute('aria-selected','false');}$('tensor-tab').classList.toggle('active',true);$('tensor-tab').setAttribute('aria-selected','true');});
+nodeGraph.onShow=()=>{tensorGraph.active=false;$('tensor-pane').hidden=true;$('tensor-tab').classList.toggle('active',false);$('tensor-tab').setAttribute('aria-selected','false');};
 const city=new City($('city')),operation=new Operation($('operation'));let miniCities=[];
 const timelineStatic=document.createElement('canvas');let timelineW=0,timelineH=0,timelineDrag=null;
 const laneCategories=categories;const laneY=cat=>26+laneCategories.indexOf(cat)*10;
@@ -60,6 +64,7 @@ function renderTransfers(){
  capture.render(state.data,state.time,state.selected,[state.start,state.end]);
  graph.render();
  nodeGraph.render();
+ if(tensorGraph.active){$('graph-title').textContent='Tensor producer/consumer graph';$('graph-scope').hidden=true;}else $('graph-scope').hidden=false;$('graph-detail').hidden=tensorGraph.active;$('graph-summary').hidden=tensorGraph.active;
 }
 function followAtCursor(){
  const flow=executionFlow(state.data,state.time,state.flowStream);
@@ -140,7 +145,7 @@ function bind(){
  $('flow-stream').onchange=()=>{state.flowStream=$('flow-stream').value;$('board-stream').value=state.flowStream;state.followCursor=true;$('follow-cursor').checked=true;followAtCursor();};
  $('board-stream').onchange=()=>{$('flow-stream').value=$('board-stream').value;$('flow-stream').onchange();};
  $('board-play').onclick=playToggle;
- $('capture-map').onclick=e=>{const hit=capture.hit(e.clientX,e.clientY);if(typeof hit==='number')selectEvent(hit);else if(hit?.gap)graph.inspectGap(hit.gap);else if(hit?.node)graph.inspect(hit.node);else if(hit?.time!=null)graph.inspectTime(hit.time,hit.category);};
+ $('capture-map').onclick=e=>{const hit=capture.hit(e.clientX,e.clientY);if(typeof hit==='number'){nodeGraph.show(true);selectEvent(hit);}else if(hit?.gap){nodeGraph.show(false);graph.inspectGap(hit.gap);}else if(hit?.node){nodeGraph.show(false);graph.inspect(hit.node);}else if(hit?.time!=null){nodeGraph.show(false);graph.inspectTime(hit.time,hit.category);}};
  $('capture-position').oninput=()=>{state.sequenceEnd=null;state.time=+$('capture-position').value/100000*state.data.duration_ns;state.playing=false;updatePlay();followAtCursor();ensureVisible();renderTransfers();};
  $('sequence-prev').onclick=()=>{if(board.model?.previousPage!=null)selectEvent(board.model.previousPage,{seek:false});};
  $('sequence-next').onclick=()=>{if(board.model?.nextPage!=null)selectEvent(board.model.nextPage,{seek:false});};
@@ -203,7 +208,7 @@ function frame(now){const dt=Math.max(0,now-lastFrame);lastFrame=now;
  if(state.view==='compare'&&state.compareData.length){const total=state.compareData[0].duration_ns;if(state.comparePlaying){state.compareTime=advance(state.compareTime,dt,.1,total);state.visualClock+=dt/1000;if(state.compareTime===total){state.comparePlaying=false;$('compare-play').textContent='▶ Play comparison';}}state.compareData.forEach((d,i)=>{const t=compareTime(state.compareTime,d.duration_ns,total,state.relative),window=replayWindow(d.duration_ns,true),a=activity(d,t,window);miniCities[i].draw(t>=d.duration_ns?[]:a.orders,state.visualClock,{smCount:d.hardware[0]?.smCount??48,completed:t>=d.duration_ns,memory:a.memory,dispatch:a.dispatch});$('compare-now-'+i).textContent=`${ms(t)} · ${a.count} orders / ${duration(Math.min(window,t))} window`;});$('compare-clock').textContent=ms(state.compareTime);$('compare-scrubber').value=Math.round(state.compareTime/total*100000);}
  requestAnimationFrame(frame);
 }
-async function init(){try{state.catalog=await fetchJSON('data/catalog.json');$('dataset').innerHTML=state.catalog.datasets.map(d=>`<option value="${d.id}">${esc(d.label)}</option>`).join('');bind();renderEvidence();await switchDataset('original');renderComparison();requestAnimationFrame(frame);}catch(e){error(e);}}
+async function init(){try{state.catalog=await fetchJSON('data/catalog.json');$('dataset').innerHTML=state.catalog.datasets.map(d=>`<option value="${d.id}">${esc(d.label)}</option>`).join('');bind();renderEvidence();await tensorGraph.load();await switchDataset('original');renderComparison();requestAnimationFrame(frame);}catch(e){error(e);}}
 // Small read-only QA surface; the same real controls are used by browser tests.
-window.gpuCity={state,city,operation,board,capture,graph,nodeGraph,load,selectEvent,activity,showView,investigate};
+window.gpuCity={state,city,operation,board,capture,graph,nodeGraph,tensorGraph,load,selectEvent,activity,showView,investigate};
 init();

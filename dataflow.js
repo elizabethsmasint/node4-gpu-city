@@ -1,7 +1,7 @@
 import {esc,num,duration,colors,lowerBound,clamp} from './core.js';
-import {flowNode,flowStates} from './flow.js?v=dependency-5';
+import {flowNode,flowStates} from './flow.js?v=tensor-6';
 import {operationNames} from './overview.js';
-import {transferProgress} from './transfers.js?v=dependency-5';
+import {transferProgress} from './transfers.js?v=tensor-6';
 
 export const sequenceSize=18;
 // Every card shares recorded time. Tile phases are illustrative subdivisions of

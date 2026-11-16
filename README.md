@@ -31,7 +31,7 @@ publishing repository; pushing to `main` triggers `pages build and deployment`.
 Live site: https://elizabethsmasint.github.io/node4-gpu-city/
 
 The editable application copy is also in `../../../gpu_city/web`. Keep the HTML,
-JavaScript, styles, and tests synchronized. Current asset version: `dependency-5`.
+JavaScript, styles, and tests synchronized. Current asset version: `tensor-6`.
 
 ## Verification
 
@@ -149,3 +149,36 @@ cross-stream relationships stay missing, and timestamps cannot change layout or
 node dimensions. Handler tests verify separate views, independent camera zoom,
 lookup/expansion and predecessor/successor inspection. A Cairo replay of the actual
 Canvas renderer was visually inspected; this is not browser layout verification.
+
+
+## Tensor producer/consumer graph (current default)
+
+**Tensor dependencies** now opens actual source/compiler value relationships,
+separate from **Recorded execution order** and **Execution timeline**. It defaults
+to the saved Original RMSNorm backward wrapper, whose two reduction kernels form
+a dependent branch while a separate input-gradient kernel reads the original
+inputs without consuming either reduction's output. Shared reads create no edge
+between consumers. This gives a concrete overlap investigation grounded in
+buffer reads/writes, rather than drawing arrows from call order.
+
+Five selectable scopes include exact GDN chunk SSA (71 operations/inputs),
+dense FFN, residual block and the saved Original RMSNorm forward/backward
+wrappers. Select nodes to inspect named input/output values, producers, consumers,
+source expressions, line numbers and hashes. Gold highlights prerequisite values;
+cyan borders indicate computations with no path to the selection in this partial
+scope. Source/compiler scopes explicitly have no per-launch durations or measured
+critical path. Existing timing captures are not silently joined to these graphs.
+
+A complete measured training-step tensor graph still requires a new capture.
+`tools/capture_tensor_graph.py` records actual tensor/storage identities,
+mutation versions and conservative alias hazards with same-run profiler
+associations. `TENSOR_CAPTURE.md` documents smoke capture, the existing Docker
+command, coverage limits and loading the result. This session has no PyTorch in
+host Python and cannot access the Docker daemon; the new GPU instrumentation
+has not run. Its pure dependency and trace-joining logic is fixture-tested.
+
+Large imported tensor graphs retain the full reachability model and render a
+bounded dependency neighborhood, with ID lookup and producer/consumer navigation.
+The recorded-execution graph retains sequence collapsing and launch-level
+inspection. Memory activity and full-record gap analysis remain in the measured
+execution views; clicking the capture map opens the relevant measured view.

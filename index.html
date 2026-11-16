@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Node4 · Kernel Data Flow</title><meta name="description" content="Follow GPU and DRAM data movement, explore each kernel, and see recorded execution dependencies in Node4."><link rel="stylesheet" href="style.css?v=dependency-5"><link rel="stylesheet" href="workbench.css?v=dependency-5"></head>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Node4 · Kernel Data Flow</title><meta name="description" content="Follow GPU and DRAM data movement, explore each kernel, and see recorded execution dependencies in Node4."><link rel="stylesheet" href="style.css?v=tensor-6"><link rel="stylesheet" href="workbench.css?v=tensor-6"></head>
 <body>
 <header class="masthead"><a class="brand" href="#"><span class="brand-mark">N<span>4</span></span><div>NODE4 <b>GPU CITY</b><small>THE DATA FLOW WORKBENCH</small></div></a><nav aria-label="Views"><button data-view="replay" class="nav active">Data flow</button><button data-view="compare" class="nav">Compare runs</button><button data-view="evidence" class="nav">Evidence & data</button></nav><div class="machine"><i></i> DGX SPARK <span>GB10 / 48 SMs</span></div></header>
 <main>
@@ -24,8 +24,17 @@
 <section class="execution-graph panel" aria-label="Recorded execution dependency graph">
 <div class="graph-heading"><div><span class="overline">EXECUTION & COMPLETION</span><h2 id="graph-title">Kernel dependencies & execution</h2></div><span class="graph-gold-key">▱ Highlighted chain</span></div>
 <p id="graph-scope" class="graph-note"></p>
-<div class="graph-view-tabs" role="tablist" aria-label="Execution views"><button id="nodegraph-tab" class="active" role="tab" aria-selected="true" aria-controls="nodegraph-pane">Dependency graph</button><button id="execution-tab" role="tab" aria-selected="false" aria-controls="execution-pane">Execution timeline</button></div>
-<div id="nodegraph-pane" role="tabpanel" aria-labelledby="nodegraph-tab">
+<div class="graph-view-tabs" role="tablist" aria-label="Execution views"><button id="tensor-tab" class="active" role="tab" aria-selected="true" aria-controls="tensor-pane">Tensor dependencies</button><button id="nodegraph-tab" role="tab" aria-selected="false" aria-controls="nodegraph-pane">Recorded execution order</button><button id="execution-tab" role="tab" aria-selected="false" aria-controls="execution-pane">Execution timeline</button></div>
+<div id="tensor-pane" role="tabpanel" aria-labelledby="tensor-tab">
+<div class="graph-toolbar"><label>Evidence scope <select id="tensor-scope-select" aria-label="Tensor graph evidence scope"></select></label><button id="tensor-fit">Fit tensor graph</button><button id="tensor-selected">Focus selected computation</button><button id="tensor-plus" aria-label="Zoom tensor graph in">+</button><button id="tensor-minus" aria-label="Zoom tensor graph out">−</button><label>Node ID <input id="tensor-node-id" placeholder="e.g. kernel:0 or op1000" aria-label="Tensor graph node ID"></label><button id="tensor-lookup-go">Inspect node</button><button id="tensor-import">Load tensor capture</button><input id="tensor-file" type="file" accept=".json" hidden></div>
+<p id="tensor-scope" class="graph-note">Loading source/compiler tensor dependencies…</p>
+<p class="graph-note">Arrows identify consumed tensor values and their producers. Call order creates no edge. Select a computation to inspect the tensors it reads/writes and other computations without a tensor dependency path. Drag to pan; scroll to zoom. Source/compiler graphs do not have per-launch timings.</p>
+<svg id="tensor-svg" role="img" tabindex="0" aria-label="Tensor producer consumer graph. Nodes and neighbor buttons support keyboard selection."></svg>
+<div class="graph-legend"><span>Gold: selected computation’s prerequisites</span><span>Cyan border: no tensor path to selection in this scope</span><span>Dashed purple: conservative storage hazard</span></div>
+<div id="tensor-detail" class="graph-inspector" aria-live="polite"></div>
+<details class="tensor-limit-details"><summary>Coverage and overlap limits</summary><div id="tensor-limits"></div><p>A complete launch-level tensor graph needs a new diagnostic capture. <a href="tools/capture_tensor_graph.py" download>Download the PyTorch tensor capture tool</a> and <a href="TENSOR_CAPTURE.md" target="_blank" rel="noopener">read the capture instructions</a>. The tool records tensor/storage identities and mutation hazards, plus same-run kernel associations. This session has no PyTorch runtime, so a new capture has not been run.</p></details>
+</div>
+<div id="nodegraph-pane" role="tabpanel" aria-labelledby="nodegraph-tab" hidden>
 <p id="dag-scope" class="graph-note"></p>
 <div class="graph-toolbar"><button id="dag-fit">Fit capture graph</button><button id="dag-selected">Go to selected kernel</button><button id="dag-focus">Focus highlighted constraints</button><button id="dag-plus" aria-label="Zoom node graph in">+</button><button id="dag-minus" aria-label="Zoom node graph out">−</button><button id="dag-expand">Expand selected sequence</button><button id="dag-collapse">Collapse sequences</button></div>
 <p class="graph-note">Each card is one launch or an expandable sequence. Arrows encode recorded prerequisites. Drag to pan; scroll to zoom; Shift + scroll to pan. Double-click a sequence to expand it. Durations and timestamps are labels; they never set node size or position.</p>
@@ -70,4 +79,4 @@
 
 python3 gpu_city/normalize.py convert trace.json \
   --output /tmp/replay.json</pre><p>For .nsys-rep, the converter uses an installed <code>nsys export</code>. Explicit Nsight synchronization pairs use zero-based indices. PyTorch imports default to the complete recorded GPU span; use interval bounds to isolate a step.</p><button id="choose-file" class="primary">Choose normalized JSON</button></div></dialog>
-<script type="module" src="app.js?v=dependency-5"></script></body></html>
+<script type="module" src="app.js?v=tensor-6"></script></body></html>
